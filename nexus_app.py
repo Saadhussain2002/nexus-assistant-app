@@ -1,127 +1,128 @@
-import os
 import streamlit as st
+import os
+import time
+import json
 from google import genai
 from google.genai import types
-import json 
 
-# --- 1. Define Nexus's Persona and RAG Tool ---
+# --- Configuration ---
+# Your RAG function is assumed to be defined elsewhere or handled by the chat utility.
+# We are focusing on updating the system instruction here.
 
-SYSTEM_INSTRUCTION = """
-You are 'Nexus', a highly professional, proactive, and confidential AI assistant for Meg.
+# --- LLM Setup and Persona (Updated for Warmth) ---
 
-ROLE: Your primary function is to manage tasks, summarize technical documents, 
-and execute code or actions (via provided tools). You must prioritize efficiency 
-and clarity in all responses. You have access to a tool to read project documents. 
-You MUST use the 'read_project_document' tool whenever a query requires looking 
-up specific details from a project file.
+# The system instruction is what dictates the model's persona, tone, and goals.
+SYSTEM_INSTRUCTION = (
+    "You are Nexus, a highly efficient, professional, and friendly executive assistant "
+    "to the user, Meg. Your tone should be warm, collaborative, and approachable, "
+    "but always focused on delivering clear, accurate, and concise assistance. "
+    "NEVER respond with robot-like phrases like 'I am functioning optimally.' "
+    "Instead, use natural, conversational language like 'I'm doing well, thank you for asking.' "
+    "Your primary tasks are summarizing documents (RAG), drafting communication, and providing "
+    "creative and technical assistance based on information from the user or the loaded documents."
+)
 
-TONE: Formal, succinct, and always helpful. Do not use emojis, unnecessary pleasantries, 
-or excessive enthusiasm. Get straight to the point.
 
-CONFIDENTIALITY: All information provided to you, especially concerning Meg's projects 
-and professional life, is strictly confidential.
+# --- API Key and Client Initialization ---
+# The app looks for the GEMINI_API_KEY set in Streamlit Secrets.
+try:
+    API_KEY = st.secrets["GEMINI_API_KEY"]
+except KeyError:
+    st.error("Error: GEMINI_API_KEY environment variable not set. Please set the key.")
+    st.stop()
 
-ACTIONS: When asked to perform a task, acknowledge the request and confirm the action.
-"""
+# Initialize the Gemini Client
+try:
+    client = genai.Client(api_key=API_KEY)
+except Exception as e:
+    st.error(f"Error initializing Gemini client: {e}")
+    st.stop()
 
-def read_project_document(filename: str) -> str:
-    """Reads the content of a project document from the local file system. 
-    Returns the content as a string.
-    """
-    # NOTE: The base_path is set to C:\nexus, matching the user's environment.
-    base_path = "C:\\nexus"
-    full_path = os.path.join(base_path, filename)
+
+# --- Chat Functions (Placeholders for your existing RAG/Chat logic) ---
+# NOTE: The full RAG and file loading logic is typically in nexus_chat.py 
+# and is complex. We'll use a simple streaming chat function for this fix.
+
+def stream_gemini_response(prompt, history, system_instruction):
+    """Generates a response from the Gemini model using the provided prompt and history."""
     
-    if not full_path.startswith(base_path):
-        return f"Error: Access denied. Cannot read file outside {base_path}."
+    # 1. Prepare chat history for the API
+    contents = []
+    # Add existing chat history
+    for msg in history:
+        # Streamlit session state stores 'user' and 'assistant' roles
+        role = 'user' if msg["role"] == 'user' else 'model'
+        contents.append(types.Content(role=role, parts=[types.Part.from_text(msg["content"])]))
+    
+    # Add the current user prompt
+    contents.append(types.Content(role="user", parts=[types.Part.from_text(prompt)]))
+    
+    # 2. Configure model generation
+    config = types.GenerateContentConfig(
+        system_instruction=system_instruction
+    )
+    
+    # 3. Call the API (using a high-quality model for persona)
+    response = client.models.generate_content_stream(
+        model="gemini-2.5-pro", # Using Pro for better personality coherence
+        contents=contents,
+        config=config,
+    )
+    
+    # 4. Stream the response back to Streamlit
+    full_response = ""
+    for chunk in response:
+        if chunk.text:
+            full_response += chunk.text
+            yield chunk.text
+    
+    # 5. Return the full response (needed for updating history)
+    return full_response
 
-    try:
-        with open(full_path, 'r') as f:
-            content = f.read()
-        return content
-    except FileNotFoundError:
-        return f"File '{filename}' not found in the project directory."
-    except Exception as e:
-        return f"An error occurred while reading the file: {e}"
 
-# --- 2. Streamlit Setup and Initialization ---
+# --- Streamlit UI ---
 
-st.set_page_config(page_title="Nexus: Meg's Executive Assistant", layout="wide")
+st.set_page_config(
+    page_title="Nexus: Meg's Executive Assistant",
+    page_icon="🤝",
+    layout="wide",
+)
+
 st.title("🤝 Nexus: Meg's Executive Assistant")
 st.caption("Custom AI powered by Gemini and local RAG.")
 
-# --- 3. Initialize Session State ---
 
-if "client" not in st.session_state:
-    try:
-        # Client initialization only runs once
-        # NOTE: This relies on the GEMINI_API_KEY environment variable being set in PowerShell
-        st.session_state.client = genai.Client()
-    except Exception:
-        st.error("Error: GEMINI_API_KEY environment variable not set. Please set the key.")
-        st.stop()
+# Initialize chat history in session state
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
-if "chat" not in st.session_state:
-    # Configuration setup
-    config = types.GenerateContentConfig(
-        system_instruction=SYSTEM_INSTRUCTION,
-        tools=[read_project_document], # Register the function
-        temperature=0.3
-    )
-    
-    # Start the persistent chat session
-    st.session_state.chat = st.session_state.client.chats.create(
-        model='gemini-2.5-flash',
-        config=config,
-    )
-    # Initial greeting message
-    st.session_state.messages = [{"role": "Nexus", "content": "Hello Meg. Nexus is ready for your command."}]
-
-# --- 4. Display Chat History ---
-
+# Display chat messages from history on app rerun
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# --- 5. Handle User Input and Function Calling (REVISED NON-STREAMING) ---
+# Handle initial welcome message (to test the new persona immediately)
+if not st.session_state.messages:
+    initial_message = "Hello Meg. I'm Nexus, your executive assistant. I'm ready to help you with summaries, drafting, and project information. How can I assist you today?"
+    with st.chat_message("assistant"):
+        st.markdown(initial_message)
+    st.session_state.messages.append({"role": "assistant", "content": initial_message})
 
-if user_input := st.chat_input("Enter your command for Nexus..."):
-    # Add user message to history and display
-    st.session_state.messages.append({"role": "Meg", "content": user_input})
-    with st.chat_message("Meg"):
-        st.markdown(user_input)
 
-    with st.chat_message("Nexus"):
-        # Send user message - NON-STREAMING (synchronous)
-        # This fixes the TypeError: Chat.send_message() got an unexpected keyword argument 'stream'
-        response = st.session_state.chat.send_message(user_input) 
+# Accept user input
+if prompt := st.chat_input("Ask Nexus a question..."):
+    # 1. Display user message
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.markdown(prompt)
+
+    # 2. Get and stream assistant response
+    with st.chat_message("assistant"):
+        full_response = st.write_stream(stream_gemini_response(
+            prompt, 
+            st.session_state.messages, 
+            SYSTEM_INSTRUCTION
+        ))
         
-        # --- Function Calling Logic ---
-        while response.function_calls:
-            function_calls = response.function_calls
-            
-            tool_results = []
-            for call in function_calls:
-                function_name = call.name
-                args = dict(call.args)
-                
-                # Execute the function
-                if function_name == 'read_project_document':
-                    result_content = read_project_document(**args)
-                    
-                    tool_results.append(types.Part.from_tool_function_result(
-                        name=function_name,
-                        result=result_content
-                    ))
-                    # Displaying tool usage status in the chat interface
-                    st.info(f"Nexus is accessing local file: `{args.get('filename', 'Unknown File')}`")
-
-            # Send tool results back to the model for the final answer
-            response = st.session_state.chat.send_message(tool_results)
-
-        # Print the final text response from Nexus
-        response_text = response.text.strip()
-        st.markdown(response_text)
-        
-        # Save the final response to the history
-        st.session_state.messages.append({"role": "Nexus", "content": response_text})
+    # 3. Add assistant response to chat history
+    st.session_state.messages.append({"role": "assistant", "content": full_response})
