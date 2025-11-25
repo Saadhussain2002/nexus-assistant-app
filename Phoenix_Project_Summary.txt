@@ -1,0 +1,8 @@
+Project Phoenix - Key Deliverables
+
+1. Initiation: Finalize budget and secure sign-off from finance (due date: 2025-11-30).
+2. Planning: Define scope, create WBS, and allocate resources.
+3. Execution: Begin sprint work, conduct weekly stakeholder meetings.
+4. Closure: Conduct final review and handover documentation.
+
+The project lead is John Smith. The dedicated budget is $250,000.
