@@ -7,7 +7,6 @@ from google.genai import types
 
 # --- Configuration ---
 # Your RAG function is assumed to be defined elsewhere or handled by the chat utility.
-# We are focusing on updating the system instruction here.
 
 # --- LLM Setup and Persona (Updated for Warmth) ---
 
@@ -39,9 +38,7 @@ except Exception as e:
     st.stop()
 
 
-# --- Chat Functions (Placeholders for your existing RAG/Chat logic) ---
-# NOTE: The full RAG and file loading logic is typically in nexus_chat.py 
-# and is complex. We'll use a simple streaming chat function for this fix.
+# --- Chat Functions (The Fix is in stream_gemini_response) ---
 
 def stream_gemini_response(prompt, history, system_instruction):
     """Generates a response from the Gemini model using the provided prompt and history."""
@@ -52,19 +49,28 @@ def stream_gemini_response(prompt, history, system_instruction):
     for msg in history:
         # Streamlit session state stores 'user' and 'assistant' roles
         role = 'user' if msg["role"] == 'user' else 'model'
-        contents.append(types.Content(role=role, parts=[types.Part.from_text(msg["content"])]))
+        
+        content_text = msg.get("content", "")
+        
+        # --- CRITICAL FIX: Only process non-empty string content to prevent TypeError ---
+        # This check stops the app from crashing if a message isn't a simple string.
+        if isinstance(content_text, str) and content_text:
+            contents.append(types.Content(role=role, parts=[types.Part.from_text(content_text)]))
+        # -----------------------------------------------------------------------------
+            
     
     # Add the current user prompt
     contents.append(types.Content(role="user", parts=[types.Part.from_text(prompt)]))
     
     # 2. Configure model generation
     config = types.GenerateContentConfig(
-        system_instruction=system_instruction
+        system_instruction=system_instruction,
+        temperature=0.7 
     )
     
-    # 3. Call the API (using a high-quality model for persona)
+    # 3. Call the API
     response = client.models.generate_content_stream(
-        model="gemini-2.5-pro", # Using Pro for better personality coherence
+        model="gemini-2.5-pro",
         contents=contents,
         config=config,
     )
@@ -101,11 +107,14 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# Handle initial welcome message (to test the new persona immediately)
+# Handle initial welcome message
 if not st.session_state.messages:
     initial_message = "Hello Meg. I'm Nexus, your executive assistant. I'm ready to help you with summaries, drafting, and project information. How can I assist you today?"
+    
     with st.chat_message("assistant"):
         st.markdown(initial_message)
+        
+    # Ensure the message content is explicitly a string for the history append
     st.session_state.messages.append({"role": "assistant", "content": initial_message})
 
 
