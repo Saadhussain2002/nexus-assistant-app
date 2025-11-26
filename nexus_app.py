@@ -5,10 +5,7 @@ import json
 from google import genai
 from google.genai import types
 
-# --- Configuration ---
-# Your RAG function is assumed to be defined elsewhere or handled by the chat utility.
-
-# --- LLM Setup and Persona (Updated for Warmth) ---
+# --- LLM Setup and Persona ---
 
 # The system instruction is what dictates the model's persona, tone, and goals.
 SYSTEM_INSTRUCTION = (
@@ -38,7 +35,7 @@ except Exception as e:
     st.stop()
 
 
-# --- Chat Functions (The Fix is in stream_gemini_response) ---
+# --- Chat Functions (Contains the Critical Fix) ---
 
 def stream_gemini_response(prompt, history, system_instruction):
     """Generates a response from the Gemini model using the provided prompt and history."""
@@ -53,7 +50,6 @@ def stream_gemini_response(prompt, history, system_instruction):
         content_text = msg.get("content", "")
         
         # --- CRITICAL FIX: Only process non-empty string content to prevent TypeError ---
-        # This check stops the app from crashing if a message isn't a simple string.
         if isinstance(content_text, str) and content_text:
             contents.append(types.Content(role=role, parts=[types.Part.from_text(content_text)]))
         # -----------------------------------------------------------------------------
@@ -97,6 +93,11 @@ st.set_page_config(
 st.title("🤝 Nexus: Meg's Executive Assistant")
 st.caption("Custom AI powered by Gemini and local RAG.")
 
+# TEMPORARY FIX: Add a button to clear the state and force rerun
+# This is our ultimate safety switch to fix the persistent TypeError issue.
+if st.button("🔴 Force Clear Chat History"):
+    st.session_state.messages = []
+    st.rerun()
 
 # Initialize chat history in session state
 if "messages" not in st.session_state:
@@ -114,7 +115,6 @@ if not st.session_state.messages:
     with st.chat_message("assistant"):
         st.markdown(initial_message)
         
-    # Ensure the message content is explicitly a string for the history append
     st.session_state.messages.append({"role": "assistant", "content": initial_message})
 
 
